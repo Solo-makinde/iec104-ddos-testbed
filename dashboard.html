@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IEC-104 Security Testbed &mdash; DDoS Simulation & IDS</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2333; --border:#30363d;
+    --ink:#e6edf3; --muted:#8b949e; --accent:#2f81f7;
+    --green:#3fb950; --yellow:#d29922; --red:#f85149; --critical:#db61a2;
+    --mono:"SF Mono",ui-monospace,"Cascadia Code",Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px}
+  header{background:linear-gradient(90deg,#0d1117,#161b22);border-bottom:1px solid var(--border);
+    padding:14px 22px;display:flex;align-items:center;justify-content:space-between}
+  header h1{font-size:15px;margin:0;letter-spacing:.3px;font-weight:600}
+  header h1 span{color:var(--accent)}
+  .sub{color:var(--muted);font-size:11px;margin-top:2px}
+  .wrap{padding:18px 22px;max-width:1200px;margin:0 auto}
+  .grid{display:grid;gap:16px}
+  .cards{grid-template-columns:repeat(4,1fr)}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px}
+  .panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);
+    margin:0 0 12px;font-weight:600}
+  .sevcard{position:relative;overflow:hidden}
+  .sevcard .val{font-family:var(--mono);font-size:26px;font-weight:700;margin:2px 0}
+  .sevcard .lbl{font-size:11px;color:var(--muted)}
+  .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:10px;font-weight:700;
+    letter-spacing:.5px;margin-top:8px}
+  .b-GREEN{background:rgba(63,185,80,.15);color:var(--green)}
+  .b-YELLOW{background:rgba(210,153,34,.15);color:var(--yellow)}
+  .b-RED{background:rgba(248,81,73,.15);color:var(--red)}
+  .b-CRITICAL{background:rgba(219,97,162,.18);color:var(--critical)}
+  .stripe{position:absolute;left:0;top:0;bottom:0;width:4px}
+  .s-GREEN{background:var(--green)} .s-YELLOW{background:var(--yellow)}
+  .s-RED{background:var(--red)} .s-CRITICAL{background:var(--critical)}
+  .controls{display:grid;grid-template-columns:1.3fr repeat(3,1fr) auto auto;gap:10px;align-items:end}
+  label{font-size:11px;color:var(--muted);display:block;margin-bottom:4px}
+  select,input{width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--ink);
+    border-radius:7px;padding:8px 10px;font-family:var(--mono);font-size:13px}
+  button{background:var(--accent);color:#fff;border:0;border-radius:7px;padding:9px 16px;
+    font-weight:600;cursor:pointer;white-space:nowrap}
+  button.stop{background:var(--red)} button.ghost{background:var(--panel2);border:1px solid var(--border);color:var(--ink)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--border)}
+  th{color:var(--muted);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.5px}
+  td.mono{font-family:var(--mono)}
+  .pill{font-size:10px;padding:2px 7px;border-radius:5px;font-weight:700}
+  .status-row{display:flex;gap:18px;align-items:center;font-size:12px;color:var(--muted)}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+  .live{color:var(--green)} .idle{color:var(--muted)}
+  canvas{width:100%;height:230px}
+  .note{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .foot{color:var(--muted);font-size:11px;text-align:center;padding:20px}
+  .empty{color:var(--muted);font-size:12px;padding:14px 0;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>IEC 60870-5-104 <span>Security Testbed</span> &mdash; DDoS Simulation &amp; IDS</h1>
+    <div class="sub">Loopback-only mock outstation &middot; authorized research &amp; education</div>
+  </div>
+  <div class="status-row">
+    <span id="idsStatus"><span class="dot" style="background:var(--muted)"></span>IDS &mdash;</span>
+    <span id="atkStatus"><span class="dot" style="background:var(--muted)"></span>Attack idle</span>
+  </div>
+</header>
+
+<div class="wrap grid" style="gap:16px">
+
+  <!-- attack control -->
+  <div class="panel">
+    <h2>Attack Control &mdash; Tools &rarr; DDoS Simulation</h2>
+    <div class="controls">
+      <div>
+        <label>Attack profile</label>
+        <select id="profile">
+          <option value="apdu_flood">APDU flood (I/U/S frames)</option>
+          <option value="connection_flood">Connection storm (STARTDT)</option>
+          <option value="malformed_flood">Malformed / junk frames</option>
+        </select>
+      </div>
+      <div><label>Burst rate</label><input id="burst" type="number" value="250" min="1" max="1000"></div>
+      <div><label>Duration (min)</label><input id="duration" type="number" value="0.5" min="0.1" max="30" step="0.1"></div>
+      <div><label>Wait period (s)</label><input id="wait" type="number" value="1" min="0.2" max="10" step="0.1"></div>
+      <button id="startBtn" onclick="startAttack()">Start</button>
+      <button id="stopBtn" class="stop" onclick="stopAttack()" disabled>Stop</button>
+    </div>
+    <div class="note">Burst = frames per burst &middot; Duration = auto-stop time &middot; Wait = pause between bursts.
+      All traffic targets 127.0.0.1:2404 only.
+      <button class="ghost" style="padding:4px 10px;font-size:11px" onclick="toggleIDS()">Toggle IDS</button>
+      <button class="ghost" id="mitBtn" style="padding:4px 10px;font-size:11px" onclick="toggleMit()">Mitigation: OFF</button>
+    </div>
+  </div>
+
+  <!-- mitigation panel -->
+  <div class="panel" id="mitPanel">
+    <h2>Defense-in-Depth Mitigation Gateway</h2>
+    <div class="grid cards" style="grid-template-columns:repeat(4,1fr)">
+      <div><div class="lbl">Frames allowed</div><div class="val" id="mAllowFrames" style="color:var(--green)">0</div></div>
+      <div><div class="lbl">Frames blocked (rate)</div><div class="val" id="mBlockRate" style="color:var(--red)">0</div></div>
+      <div><div class="lbl">Frames blocked (malformed)</div><div class="val" id="mBlockMal" style="color:var(--red)">0</div></div>
+      <div><div class="lbl">Conns blocked</div><div class="val" id="mBlockConn" style="color:var(--red)">0</div></div>
+    </div>
+    <div class="note">Controls: source allowlist (default-deny) &middot; per-source connection threshold &middot;
+      per-connection frame rate limit (token bucket) &middot; protocol-aware inspection.
+      Toggle mitigation and re-run the same attack to see load blocked before it reaches the outstation.</div>
+  </div>
+
+  <!-- severity cards -->
+  <div class="grid cards">
+    <div class="panel sevcard" id="card_connection_rate">
+      <div class="stripe s-GREEN"></div>
+      <div class="lbl">Connection rate</div>
+      <div class="val">0.0<span style="font-size:13px;color:var(--muted)">/s</span></div>
+      <div class="lbl">Connection storm</div>
+      <span class="badge b-GREEN">GREEN</span>
+    </div>
+    <div class="panel sevcard" id="card_startdt_rate">
+      <div class="stripe s-GREEN"></div>
+      <div class="lbl">STARTDT rate</div>
+      <div class="val">0.0<span style="font-size:13px;color:var(--muted)">/s</span></div>
+      <div class="lbl">Activation flood</div>
+      <span class="badge b-GREEN">GREEN</span>
+    </div>
+    <div class="panel sevcard" id="card_apdu_rate">
+      <div class="stripe s-GREEN"></div>
+      <div class="lbl">APDU rate</div>
+      <div class="val">0.0<span style="font-size:13px;color:var(--muted)">/s</span></div>
+      <div class="lbl">I/U/S frame flood</div>
+      <span class="badge b-GREEN">GREEN</span>
+    </div>
+    <div class="panel sevcard" id="card_malformed_rate">
+      <div class="stripe s-GREEN"></div>
+      <div class="lbl">Malformed rate</div>
+      <div class="val">0.0<span style="font-size:13px;color:var(--muted)">/s</span></div>
+      <div class="lbl">Junk / crafted flood</div>
+      <span class="badge b-GREEN">GREEN</span>
+    </div>
+  </div>
+
+  <!-- chart -->
+  <div class="panel">
+    <h2>Control-plane attack signals (rolling window)</h2>
+    <canvas id="chart"></canvas>
+    <div class="note" id="legend"></div>
+  </div>
+
+  <!-- alerts -->
+  <div class="panel">
+    <h2>IDS Alerts</h2>
+    <table>
+      <thead><tr><th>Time</th><th>Signal</th><th>Severity</th><th>Value</th><th>Threshold</th><th>Description</th></tr></thead>
+      <tbody id="alerts"><tr><td colspan="6" class="empty">No alerts yet &mdash; start an attack to generate detections.</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- recorded data -->
+  <div class="panel">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <h2 style="margin:0">Recorded Data <span id="recCount" style="color:var(--muted);font-weight:400">(0 rows)</span></h2>
+      <div style="display:flex;gap:8px">
+        <button onclick="downloadCSV()">Download CSV</button>
+        <button class="ghost" onclick="clearData()">Clear</button>
+      </div>
+    </div>
+    <div style="max-height:340px;overflow:auto">
+      <table>
+        <thead><tr>
+          <th>Time</th><th>Conn/s</th><th>STARTDT/s</th><th>APDU/s</th><th>Malformed/s</th><th>Mit</th><th>Worst</th>
+        </tr></thead>
+        <tbody id="records"><tr><td colspan="7" class="empty">No data recorded yet &mdash; each IDS cycle appends a row here.</td></tr></tbody>
+      </table>
+    </div>
+    <div class="note">Every detection cycle (2&nbsp;s) is recorded. Download writes all rows to a timestamped CSV;
+      the same data streams to <code>ids_results_web.csv</code> on disk.</div>
+  </div>
+
+  <div class="foot">IEC-104 Security Testbed &middot; loopback simulation &middot; results streamed to ids_results_web.csv</div>
+</div>
+
+<script>
+const SIGNALS = ["connection_rate","startdt_rate","apdu_rate","malformed_rate"];
+const COLORS = {connection_rate:"#2f81f7",startdt_rate:"#d29922",apdu_rate:"#f85149",malformed_rate:"#db61a2"};
+const SEVCOLOR = {GREEN:"#3fb950",YELLOW:"#d29922",RED:"#f85149",CRITICAL:"#db61a2"};
+
+async function startAttack(){
+  const body={profile:profile.value,burst:+burst.value,duration:+duration.value,wait:+wait.value};
+  await fetch("/api/attack/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+}
+async function stopAttack(){ await fetch("/api/attack/stop",{method:"POST"}); }
+async function toggleIDS(){ await fetch("/api/ids/toggle",{method:"POST"}); }
+async function toggleMit(){ await fetch("/api/mitigation/toggle",{method:"POST"}); }
+function downloadCSV(){ window.location.href = "/api/data.csv"; }
+async function clearData(){ await fetch("/api/data/clear",{method:"POST"}); }
+
+function renderRecords(records, count){
+  document.getElementById("recCount").textContent = `(${count} row${count===1?'':'s'})`;
+  const tb=document.getElementById("records");
+  if(!records.length){tb.innerHTML='<tr><td colspan="7" class="empty">No data recorded yet &mdash; each IDS cycle appends a row here.</td></tr>';return;}
+  tb.innerHTML=records.map(r=>{
+    const t=r.iso_time.split("T")[1]||r.iso_time;
+    const sv=s=>`<span style="color:${SEVCOLOR[s]}">${s}</span>`;
+    return `<tr>
+      <td class="mono">${t}</td>
+      <td class="mono">${r.connection_rate}</td>
+      <td class="mono">${r.startdt_rate}</td>
+      <td class="mono">${r.apdu_rate}</td>
+      <td class="mono">${r.malformed_rate}</td>
+      <td class="mono">${r.mitigation}</td>
+      <td>${sv(r.worst_severity)}</td></tr>`;
+  }).join("");
+}
+
+function setCard(sig, val, sev){
+  const c=document.getElementById("card_"+sig); if(!c) return;
+  c.querySelector(".val").innerHTML = val.toFixed(1)+'<span style="font-size:13px;color:var(--muted)">/s</span>';
+  const b=c.querySelector(".badge"); b.className="badge b-"+sev; b.textContent=sev;
+  c.querySelector(".stripe").className="stripe s-"+sev;
+}
+
+function drawChart(hist){
+  const cv=document.getElementById("chart"), ctx=cv.getContext("2d");
+  const W=cv.width=cv.clientWidth*devicePixelRatio, H=cv.height=230*devicePixelRatio;
+  ctx.clearRect(0,0,W,H);
+  const pad=40*devicePixelRatio;
+  let max=10;
+  hist.forEach(p=>SIGNALS.forEach(s=>{max=Math.max(max,p[s])}));
+  max=Math.ceil(max*1.15/10)*10;
+  // grid + y labels
+  ctx.font=(11*devicePixelRatio)+"px monospace"; ctx.fillStyle="#8b949e"; ctx.strokeStyle="#30363d"; ctx.lineWidth=devicePixelRatio;
+  for(let i=0;i<=4;i++){
+    const y=pad+(H-2*pad)*i/4, v=Math.round(max*(1-i/4));
+    ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(W-pad/2,y);ctx.stroke();
+    ctx.fillText(v+"/s",4*devicePixelRatio,y+4*devicePixelRatio);
+  }
+  if(hist.length<2) return;
+  const x=i=>pad+(W-pad-pad/2)*i/(hist.length-1);
+  const y=v=>pad+(H-2*pad)*(1-v/max);
+  SIGNALS.forEach(s=>{
+    ctx.beginPath();ctx.strokeStyle=COLORS[s];ctx.lineWidth=2*devicePixelRatio;
+    hist.forEach((p,i)=>{ i?ctx.lineTo(x(i),y(p[s])):ctx.moveTo(x(i),y(p[s])); });
+    ctx.stroke();
+  });
+  document.getElementById("legend").innerHTML =
+    SIGNALS.map(s=>`<span style="color:${COLORS[s]}">&#9632;</span> ${s.replace('_rate','')}`).join("  &middot;  ");
+}
+
+function renderAlerts(alerts){
+  const tb=document.getElementById("alerts");
+  if(!alerts.length){tb.innerHTML='<tr><td colspan="6" class="empty">No alerts yet &mdash; start an attack to generate detections.</td></tr>';return;}
+  tb.innerHTML=alerts.map(a=>{
+    const t=new Date(a.ts*1000).toLocaleTimeString();
+    return `<tr><td class="mono">${t}</td><td>${a.signal.replace('_rate','')}</td>
+      <td><span class="pill" style="background:${SEVCOLOR[a.severity]}22;color:${SEVCOLOR[a.severity]}">${a.severity}</span></td>
+      <td class="mono">${a.value}/s</td><td class="mono">${a.threshold}</td><td>${a.description}</td></tr>`;
+  }).join("");
+}
+
+async function poll(){
+  try{
+    const r=await fetch("/api/state"), st=await r.json();
+    SIGNALS.forEach(s=>{ const c=st.current[s]; if(c) setCard(s,c.value,c.severity); });
+    drawChart(st.history);
+    renderAlerts(st.alerts);
+    renderRecords(st.records||[], st.record_count||0);
+    // status line
+    const ids=document.getElementById("idsStatus");
+    ids.innerHTML=`<span class="dot" style="background:${st.ids_enabled?'var(--green)':'var(--muted)'}"></span>IDS ${st.ids_enabled?'monitoring':'off'}`;
+    const running=st.attack.state==="RUNNING";
+    const atk=document.getElementById("atkStatus");
+    atk.innerHTML=`<span class="dot" style="background:${running?'var(--red)':'var(--muted)'}"></span>${running?('Attack RUNNING &middot; '+st.attack.frames_sent+' frames'):'Attack idle'}`;
+    document.getElementById("startBtn").disabled=running;
+    document.getElementById("stopBtn").disabled=!running;
+    // mitigation panel
+    const m=st.mitigation||{};
+    document.getElementById("mAllowFrames").textContent=m.allowed_frames||0;
+    document.getElementById("mBlockRate").textContent=m.blocked_frames_rate||0;
+    document.getElementById("mBlockMal").textContent=m.blocked_frames_malformed||0;
+    document.getElementById("mBlockConn").textContent=(m.blocked_connections_allowlist||0)+(m.blocked_connections_rate||0);
+    const mb=document.getElementById("mitBtn");
+    mb.textContent="Mitigation: "+(st.mitigation_enabled?"ON":"OFF");
+    mb.style.borderColor=st.mitigation_enabled?"var(--green)":"var(--border)";
+    mb.style.color=st.mitigation_enabled?"var(--green)":"var(--ink)";
+  }catch(e){}
+}
+setInterval(poll,1000); poll();
+</script>
+</body>
+</html>
